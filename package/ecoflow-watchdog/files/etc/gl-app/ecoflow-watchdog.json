@@ -1,0 +1,8 @@
+{
+  "name": "EcoFlow Watchdog",
+  "description": "Auto shut off EcoFlow DC/device when client leaves or charge stops",
+  "url": "/cgi-bin/luci/admin/services/ecoflow_watchdog",
+  "version": "0.1.0",
+  "author": "community",
+  "visible": true
+}

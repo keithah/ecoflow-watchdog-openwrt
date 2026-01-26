@@ -78,6 +78,17 @@ EOF
 - Optional LuCI/GL.iNet UI tile under “Applications” for configuring tokens/targets.
 - “Official” SMS sending method once GL.iNet clarifies stable ubus/HTTP endpoints (see issue #1).
 
+## LuCI / package builds
+- Packages included for OpenWrt build systems:
+  - `package/ecoflow-watchdog/Makefile`
+  - `package/luci-app-ecoflow-watchdog/Makefile`
+- The LuCI app adds:
+  - Config form for all UCI options
+  - Status page with last activity/action, watts, cooldown/grace timers
+  - Buttons: Run once, Start, Restart, Stop
+- GL.iNet tile: `/etc/gl-app/ecoflow-watchdog.json` points to the LuCI path; harmless on other builds.
+- To build with an OpenWrt SDK: place this repo under the SDK tree and run `make package/ecoflow-watchdog/compile package/luci-app-ecoflow-watchdog/compile V=sc`.
+
 ## Decision logic
 1) If the client is present (hostapd → DHCP leases → iwinfo), liveness resets.
 2) If input watts exceed `input_watts_threshold`, liveness resets.

@@ -199,12 +199,58 @@ notify() {
 }
 
 # ---------- main logic ----------
-	run_once() {
-		load_config
-		[ -z "$DEVICE_SN" ] && { log error "device_sn missing"; exit 1; }
-		API_AVAILABLE=1
-		if [ -z "$ACCESS_TOKEN" ] || [ -z "$SECRET_TOKEN" ]; then
-			API_AVAILABLE=0
+print_status_json() {
+	load_config
+	NOW="$(date +%s)"
+	load_state
+	local present watts status="ok" cooldown_remaining grace_remaining since_inactive since_action
+
+	# probe without mutating state
+	if wifi_client_present; then
+		present=1
+	else
+		present=0
+	fi
+
+	watts="unknown"
+	if [ -n "$ACCESS_TOKEN" ] && [ -n "$SECRET_TOKEN" ]; then
+		if watts_val=$(get_input_watts); then
+			watts="$watts_val"
+		fi
+	fi
+
+	[ "$last_alive_ts" -eq 0 ] && last_alive_ts="$NOW"
+	since_inactive=$((NOW - last_alive_ts))
+	since_action=$((NOW - last_action_ts))
+	[ "$since_action" -lt 0 ] && since_action=0
+	[ "$since_inactive" -lt 0 ] && since_inactive=0
+	cooldown_remaining=$((COOLDOWN_SECONDS - since_action))
+	[ "$cooldown_remaining" -lt 0 ] && cooldown_remaining=0
+	grace_remaining=$((GRACE_SECONDS - since_inactive))
+	[ "$grace_remaining" -lt 0 ] && grace_remaining=0
+
+	printf '{'
+	printf '"now":%s,' "$NOW"
+	printf '"last_alive_ts":%s,' "$last_alive_ts"
+	printf '"last_action_ts":%s,' "$last_action_ts"
+	printf '"present":%s,' "$present"
+	printf '"watts":"%s",' "$watts"
+	printf '"cooldown_remaining":%s,' "$cooldown_remaining"
+	printf '"grace_remaining":%s,' "$grace_remaining"
+	printf '"grace_seconds":%s,' "$GRACE_SECONDS"
+	printf '"cooldown_seconds":%s,' "$COOLDOWN_SECONDS"
+	printf '"check_interval":%s,' "$CHECK_INTERVAL"
+	printf '"shutdown_target":"%s",' "$SHUTDOWN_TARGET"
+	printf '"status":"%s"' "$status"
+	printf '}\n'
+}
+
+run_once() {
+	load_config
+	[ -z "$DEVICE_SN" ] && { log error "device_sn missing"; exit 1; }
+	API_AVAILABLE=1
+	if [ -z "$ACCESS_TOKEN" ] || [ -z "$SECRET_TOKEN" ]; then
+		API_AVAILABLE=0
 			log warn "access_token/secret_token missing; API calls disabled"
 		fi
 		NOW="$(date +%s)"
@@ -275,11 +321,19 @@ run_daemon() {
 }
 
 main() {
-	if [ "${1:-}" = "--daemon" ]; then
-		run_daemon
-	else
-		run_once
-	fi
+	mode="once"
+	for arg in "$@"; do
+		case "$arg" in
+			--daemon) mode="daemon" ;;
+			--status) mode="status" ;;
+		esac
+	done
+
+	case "$mode" in
+		status) print_status_json ;;
+		daemon) run_daemon ;;
+		*) run_once ;;
+	esac
 }
 
 main "$@"

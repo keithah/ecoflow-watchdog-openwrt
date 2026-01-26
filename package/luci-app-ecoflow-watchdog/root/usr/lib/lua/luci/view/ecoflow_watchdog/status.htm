@@ -1,0 +1,44 @@
+<%+header%>
+<h2><%:EcoFlow Watchdog Status%></h2>
+<div id="status-box">Loading...</div>
+<div class="cbi-page-actions">
+  <button class="btn" onclick="ctl('runonce')"><%:Run Once Now%></button>
+  <button class="btn" onclick="ctl('start')"><%:Start Service%></button>
+  <button class="btn" onclick="ctl('restart')"><%:Restart%></button>
+  <button class="btn" onclick="ctl('stop')"><%:Stop%></button>
+</div>
+
+<script type="text/javascript">
+function fetchStatus() {
+  fetch(L.url('admin/services/ecoflow_watchdog/status_json')).then(r => r.json()).then(data => {
+    const box = document.getElementById('status-box');
+    if (!data || data.status === 'error') {
+      box.textContent = data && data.message ? data.message : 'No data';
+      return;
+    }
+    const fmt = ts => ts ? new Date(ts * 1000).toLocaleString() : 'n/a';
+    const lines = [
+      `Present: ${data.present ? 'yes' : 'no'}`,
+      `Watts: ${data.watts}`,
+      `Last activity: ${fmt(data.last_alive_ts)}`,
+      `Last action: ${fmt(data.last_action_ts)}`,
+      `Grace remaining: ${data.grace_remaining}s`,
+      `Cooldown remaining: ${data.cooldown_remaining}s`,
+      `Check interval: ${data.check_interval}s`,
+      `Target: ${data.shutdown_target}`
+    ];
+    box.innerHTML = '<pre>' + lines.join('\\n') + '</pre>';
+  }).catch(() => {
+    document.getElementById('status-box').textContent = 'Error fetching status';
+  });
+}
+
+function ctl(action) {
+  fetch(L.url('admin/services/ecoflow_watchdog/action') + '?do=' + action, {method:'POST'})
+    .then(() => setTimeout(fetchStatus, 500));
+}
+
+setInterval(fetchStatus, 5000);
+fetchStatus();
+</script>
+<%+footer%>
