@@ -70,12 +70,14 @@ inst 755 "$TMP/init_ecoflow_watchdog" "$ROOT/etc/init.d/ecoflow_watchdog"
 inst 644 "$TMP/glapp.json" "$ROOT/etc/gl-app/ecoflow-watchdog.json"
 
 # LuCI UI (optional)
+INSTALLED_LUCI=0
 if [ "$INSTALL_LUCI" = "1" ]; then
   inst 644 "$TMP/luci_controller.lua" "$ROOT/usr/lib/lua/luci/controller/ecoflow_watchdog.lua"
   inst 644 "$TMP/luci_cbi.lua" "$ROOT/usr/lib/lua/luci/model/cbi/ecoflow_watchdog.lua"
   inst 644 "$TMP/luci_status.htm" "$ROOT/usr/lib/lua/luci/view/ecoflow_watchdog/status.htm"
   # clear LuCI cache if present
   rm -f "$ROOT/tmp/luci-indexcache" "$ROOT/tmp/luci-modulecache" 2>/dev/null || true
+  INSTALLED_LUCI=1
 fi
 
 # sysupgrade persistence
@@ -137,4 +139,18 @@ if [ "$CHECK_STATUS" = "1" ]; then
     echo "Status after install:" >&2
     chroot "$ROOT" /usr/sbin/ecoflow_watchdogd --status 2>/dev/null || true
   fi
+fi
+
+# Reload web UI services if LuCI files were installed
+if [ "$INSTALLED_LUCI" = "1" ]; then
+  reload_srv() {
+    local svc="$1"
+    if [ "$ROOT" = "/" ]; then
+      [ -x "/etc/init.d/$svc" ] && { /etc/init.d/$svc reload >/dev/null 2>&1 || /etc/init.d/$svc restart >/dev/null 2>&1 || true; }
+    elif command -v chroot >/dev/null 2>&1; then
+      chroot "$ROOT" /etc/init.d/$svc reload >/dev/null 2>&1 || chroot "$ROOT" /etc/init.d/$svc restart >/dev/null 2>&1 || true
+    fi
+  }
+  reload_srv uhttpd
+  reload_srv rpcd
 fi
