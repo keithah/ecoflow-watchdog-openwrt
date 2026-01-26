@@ -75,7 +75,16 @@ fi
 echo "Installed from ${REPO}@${REF} into ${ROOT}" >&2
 echo "Edit /etc/ecoflow_watchdog.env and /etc/config/ecoflow_watchdog, then choose run mode (MODE=$MODE)" >&2
 
+CRONTAB="$ROOT/etc/crontabs/root"
+
 if [ "$MODE" = "daemon" ]; then
+  # clean old cron line if present
+  if [ -f "$CRONTAB" ]; then
+    tmpc="$(mktemp)"
+    grep -v "ecoflow_watchdogd --once" "$CRONTAB" 2>/dev/null > "$tmpc" || true
+    mv "$tmpc" "$CRONTAB"
+    chmod 600 "$CRONTAB"
+  fi
   if [ -x "$ROOT/etc/init.d/ecoflow_watchdog" ]; then
     chroot "$ROOT" /etc/init.d/ecoflow_watchdog enable >/dev/null 2>&1 || true
     chroot "$ROOT" /etc/init.d/ecoflow_watchdog start >/dev/null 2>&1 || true
@@ -84,8 +93,12 @@ if [ "$MODE" = "daemon" ]; then
     echo "Init script missing; cannot start daemon" >&2
   fi
 elif [ "$MODE" = "cron" ]; then
-  CRONTAB="$ROOT/etc/crontabs/root"
   mkdir -p "$(dirname "$CRONTAB")"
+  # remove daemon enable if switching from daemon
+  if [ -x "$ROOT/etc/init.d/ecoflow_watchdog" ]; then
+    chroot "$ROOT" /etc/init.d/ecoflow_watchdog disable >/dev/null 2>&1 || true
+    chroot "$ROOT" /etc/init.d/ecoflow_watchdog stop >/dev/null 2>&1 || true
+  fi
   if ! grep -F "ecoflow_watchdogd --once" "$CRONTAB" 2>/dev/null; then
     echo "$CRON_SPEC /usr/sbin/ecoflow_watchdogd --once >/tmp/ecoflow_watchdog.log 2>&1" >> "$CRONTAB"
   fi
