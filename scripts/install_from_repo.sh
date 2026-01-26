@@ -5,6 +5,7 @@
 #   NO_SYSUPGRADE=1       skip adding to /etc/sysupgrade.conf
 #   MODE=daemon|cron      choose run mode (default daemon)
 #   CRON_SPEC="*/10 * * * *" override cron schedule
+#   INSTALL_LUCI=1|0      install LuCI UI files (default 1)
 
 set -eu
 
@@ -15,6 +16,7 @@ NO_SYSUPGRADE="${NO_SYSUPGRADE:-0}"
 MODE="${MODE:-daemon}"
 CRON_SPEC="${CRON_SPEC:-*/10 * * * *}"
 CHECK_STATUS="${CHECK_STATUS:-1}"
+INSTALL_LUCI="${INSTALL_LUCI:-1}"
 TMP="$(mktemp -d /tmp/ecoflow_install.XXXXXX)"
 BASE="https://raw.githubusercontent.com/${REPO}/${REF}"
 
@@ -46,6 +48,12 @@ fetch etc/config/ecoflow_watchdog "$TMP/ecoflow_watchdog.conf"
 fetch etc/init.d/ecoflow_watchdog "$TMP/init_ecoflow_watchdog"
 fetch ecoflow_watchdog.env.example "$TMP/ecoflow_watchdog.env.example"
 fetch package/ecoflow-watchdog/files/etc/gl-app/ecoflow-watchdog.json "$TMP/glapp.json"
+# LuCI files (optional)
+if [ "$INSTALL_LUCI" = "1" ]; then
+  fetch package/luci-app-ecoflow-watchdog/root/usr/lib/lua/luci/controller/ecoflow_watchdog.lua "$TMP/luci_controller.lua"
+  fetch package/luci-app-ecoflow-watchdog/root/usr/lib/lua/luci/model/cbi/ecoflow_watchdog.lua "$TMP/luci_cbi.lua"
+  fetch package/luci-app-ecoflow-watchdog/root/usr/lib/lua/luci/view/ecoflow_watchdog/status.htm "$TMP/luci_status.htm"
+fi
 
 # Install
 inst 755 "$TMP/ecoflow_watchdogd" "$ROOT/usr/sbin/ecoflow_watchdogd"
@@ -60,6 +68,15 @@ inst 755 "$TMP/init_ecoflow_watchdog" "$ROOT/etc/init.d/ecoflow_watchdog"
 
 # GL.iNet tile (harmless elsewhere)
 inst 644 "$TMP/glapp.json" "$ROOT/etc/gl-app/ecoflow-watchdog.json"
+
+# LuCI UI (optional)
+if [ "$INSTALL_LUCI" = "1" ]; then
+  inst 644 "$TMP/luci_controller.lua" "$ROOT/usr/lib/lua/luci/controller/ecoflow_watchdog.lua"
+  inst 644 "$TMP/luci_cbi.lua" "$ROOT/usr/lib/lua/luci/model/cbi/ecoflow_watchdog.lua"
+  inst 644 "$TMP/luci_status.htm" "$ROOT/usr/lib/lua/luci/view/ecoflow_watchdog/status.htm"
+  # clear LuCI cache if present
+  rm -f "$ROOT/tmp/luci-indexcache" "$ROOT/tmp/luci-modulecache" 2>/dev/null || true
+fi
 
 # sysupgrade persistence
 if [ "$NO_SYSUPGRADE" != "1" ]; then
