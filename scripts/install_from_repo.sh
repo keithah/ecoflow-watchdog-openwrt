@@ -14,6 +14,7 @@ ROOT="${INSTALL_ROOT:-/}"
 NO_SYSUPGRADE="${NO_SYSUPGRADE:-0}"
 MODE="${MODE:-daemon}"
 CRON_SPEC="${CRON_SPEC:-*/10 * * * *}"
+CHECK_STATUS="${CHECK_STATUS:-1}"
 TMP="$(mktemp -d /tmp/ecoflow_install.XXXXXX)"
 BASE="https://raw.githubusercontent.com/${REPO}/${REF}"
 
@@ -109,4 +110,11 @@ elif [ "$MODE" = "cron" ]; then
   echo "Cron mode set at '$CRON_SPEC'" >&2
 else
   echo "Unknown MODE: $MODE (use daemon or cron)" >&2
+fi
+
+if [ "$CHECK_STATUS" = "1" ]; then
+  if [ -x "$ROOT/usr/sbin/ecoflow_watchdogd" ]; then
+    echo "Status after install:" >&2
+    chroot "$ROOT" /usr/sbin/ecoflow_watchdogd --status 2>/dev/null || true
+  fi
 fi
