@@ -1,0 +1,53 @@
+name: Build OpenWrt packages
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      SDK_URL: https://downloads.openwrt.org/releases/22.03.5/targets/ath79/generic/openwrt-sdk-22.03.5-ath79-generic_gcc-11.2.0_musl.Linux-x86_64.tar.xz
+      SDK_DIR: openwrt-sdk
+      ARCH: mips_24kc
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download OpenWrt SDK
+        run: |
+          set -e
+          curl -L "$SDK_URL" -o sdk.tar.xz
+          mkdir -p "$SDK_DIR"
+          tar -xf sdk.tar.xz -C "$SDK_DIR" --strip-components=1
+
+      - name: Build packages with SDK
+        run: |
+          set -e
+          cd "$SDK_DIR"
+          echo "src-link ecoflow $GITHUB_WORKSPACE" >> feeds.conf.default
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          make defconfig
+          make package/ecoflow-watchdog/compile V=s
+          make package/luci-app-ecoflow-watchdog/compile V=s
+          mkdir -p "$GITHUB_WORKSPACE/output"
+          find bin/packages -type f -name "*ecoflow*ipk" -exec cp {} "$GITHUB_WORKSPACE/output/" \;
+          find bin -name Packages.gz -path "*packages/$ARCH/*" -exec cp {} "$GITHUB_WORKSPACE/output/" \;
+
+      - name: Upload artifacts (PR/Push)
+        if: ${{ github.event_name != 'release' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-packages-${{ github.sha }}
+          path: output/*
+
+      - name: Upload release assets
+        if: ${{ github.event_name == 'release' && github.event.action == 'published' }}
+        uses: softprops/action-gh-release@v1
+        with:
+          files: output/*
