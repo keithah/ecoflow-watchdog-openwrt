@@ -43,6 +43,41 @@ State is stored in `/tmp/ecoflow_watchdog.state` so the grace window survives ac
 Uses `check_interval` from config (default 10 s).
 `/etc/init.d/ecoflow_watchdog` is provided if you prefer `service ecoflow_watchdog start` and `enable`.
 
+## GL.iNet persistence notes
+- GL.iNet keeps `/etc`, `/usr/sbin`, `/usr/lib` when “Keep settings” is enabled during firmware upgrade (default). To be extra safe, add these paths to `/etc/sysupgrade.conf`:
+  ```
+  /usr/sbin/ecoflow_watchdogd
+  /usr/lib/ecoflow_watchdog/
+  /etc/config/ecoflow_watchdog
+  /etc/ecoflow_watchdog.env
+  /etc/init.d/ecoflow_watchdog
+  ```
+- Secrets belong in `/etc/ecoflow_watchdog.env` (chmod 600) to keep them out of UCI backups.
+
+## Installation on GL.iNet (copy/paste)
+```
+opkg update
+opkg install curl jq ca-bundle iwinfo
+mkdir -p /usr/lib/ecoflow_watchdog
+cp /tmp/ecoflow_watchdogd /usr/sbin/                     # adjust source path if copied differently
+cp /tmp/ecoflow_api.sh /tmp/notify_sample.sh /usr/lib/ecoflow_watchdog/
+cp /tmp/ecoflow_watchdog /etc/config/
+cp /tmp/ecoflow_watchdog.env.example /etc/ecoflow_watchdog.env
+chmod 755 /usr/sbin/ecoflow_watchdogd /usr/lib/ecoflow_watchdog/*.sh
+chmod 600 /etc/config/ecoflow_watchdog /etc/ecoflow_watchdog.env
+cat >> /etc/sysupgrade.conf <<'EOF'
+/usr/sbin/ecoflow_watchdogd
+/usr/lib/ecoflow_watchdog/
+/etc/config/ecoflow_watchdog
+/etc/ecoflow_watchdog.env
+/etc/init.d/ecoflow_watchdog
+EOF
+```
+
+## Roadmap
+- Optional LuCI/GL.iNet UI tile under “Applications” for configuring tokens/targets.
+- “Official” SMS sending method once GL.iNet clarifies stable ubus/HTTP endpoints (see issue #1).
+
 ## Decision logic
 1) If the client is present (hostapd → DHCP leases → iwinfo), liveness resets.
 2) If input watts exceed `input_watts_threshold`, liveness resets.
