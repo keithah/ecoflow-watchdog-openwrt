@@ -102,6 +102,16 @@ EOF
   ```
   This downloads the latest main-branch build artifact into `output/`.
 
+## Quick manual install from repo (no IPK, good for PR testing)
+```
+# defaults: REPO=keithah/ecoflow-watchdog-openwrt, REF=main, MODE=daemon
+REPO=keithah/ecoflow-watchdog-openwrt REF=main MODE=cron CRON_SPEC="*/10 * * * *" \
+  sh -c 'curl -L https://raw.githubusercontent.com/keithah/ecoflow-watchdog-openwrt/main/scripts/install_from_repo.sh | sh'
+```
+- MODE=daemon (default) enables and starts the procd service.
+- MODE=cron adds a cron entry (default */10) and restarts cron.
+- Keeps settings across upgrades by appending paths to `/etc/sysupgrade.conf` (disable with `NO_SYSUPGRADE=1`).
+
 ## Installing IPKs (GL.iNet/OpenWrt)
 ```
 # copy the two ipks to the router, e.g. via scp to /tmp/

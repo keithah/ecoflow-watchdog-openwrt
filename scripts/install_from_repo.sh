@@ -1,7 +1,10 @@
 #!/bin/ash
 # Install latest (or specific ref) directly from GitHub without building IPKs.
 # Usage: REPO=keithah/ecoflow-watchdog-openwrt REF=main INSTALL_ROOT=/ ./scripts/install_from_repo.sh
-# Optional: NO_SYSUPGRADE=1 to skip adding entries.
+# Options:
+#   NO_SYSUPGRADE=1       skip adding to /etc/sysupgrade.conf
+#   MODE=daemon|cron      choose run mode (default daemon)
+#   CRON_SPEC="*/10 * * * *" override cron schedule
 
 set -eu
 
@@ -9,6 +12,8 @@ REPO="${REPO:-keithah/ecoflow-watchdog-openwrt}"
 REF="${REF:-main}"
 ROOT="${INSTALL_ROOT:-/}"
 NO_SYSUPGRADE="${NO_SYSUPGRADE:-0}"
+MODE="${MODE:-daemon}"
+CRON_SPEC="${CRON_SPEC:-*/10 * * * *}"
 TMP="$(mktemp -d /tmp/ecoflow_install.XXXXXX)"
 BASE="https://raw.githubusercontent.com/${REPO}/${REF}"
 
@@ -68,4 +73,27 @@ if [ "$NO_SYSUPGRADE" != "1" ]; then
 fi
 
 echo "Installed from ${REPO}@${REF} into ${ROOT}" >&2
-echo "Edit /etc/ecoflow_watchdog.env and /etc/config/ecoflow_watchdog, then either cron or service ecoflow_watchdog start" >&2
+echo "Edit /etc/ecoflow_watchdog.env and /etc/config/ecoflow_watchdog, then choose run mode (MODE=$MODE)" >&2
+
+if [ "$MODE" = "daemon" ]; then
+  if [ -x "$ROOT/etc/init.d/ecoflow_watchdog" ]; then
+    chroot "$ROOT" /etc/init.d/ecoflow_watchdog enable >/dev/null 2>&1 || true
+    chroot "$ROOT" /etc/init.d/ecoflow_watchdog start >/dev/null 2>&1 || true
+    echo "Daemon mode enabled and started" >&2
+  else
+    echo "Init script missing; cannot start daemon" >&2
+  fi
+elif [ "$MODE" = "cron" ]; then
+  CRONTAB="$ROOT/etc/crontabs/root"
+  mkdir -p "$(dirname "$CRONTAB")"
+  if ! grep -F "ecoflow_watchdogd --once" "$CRONTAB" 2>/dev/null; then
+    echo "$CRON_SPEC /usr/sbin/ecoflow_watchdogd --once >/tmp/ecoflow_watchdog.log 2>&1" >> "$CRONTAB"
+  fi
+  chmod 600 "$CRONTAB"
+  if chroot "$ROOT" /etc/init.d/cron status >/dev/null 2>&1; then
+    chroot "$ROOT" /etc/init.d/cron restart >/dev/null 2>&1 || true
+  fi
+  echo "Cron mode set at '$CRON_SPEC'" >&2
+else
+  echo "Unknown MODE: $MODE (use daemon or cron)" >&2
+fi
