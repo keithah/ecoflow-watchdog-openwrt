@@ -95,6 +95,12 @@ EOF
   - `luci-app-ecoflow-watchdog_*_all.ipk`
 - To fetch from a successful run: Actions → Build OpenWrt packages → run → Artifacts.
 - On releases, the same IPKs are attached automatically.
+- CLI pull for testing (requires `gh` + `jq`):
+  ```
+  REPO=keithah/ecoflow-watchdog-openwrt ./scripts/fetch_latest_artifacts.sh
+  ls output/
+  ```
+  This downloads the latest main-branch build artifact into `output/`.
 
 ## Installing IPKs (GL.iNet/OpenWrt)
 ```
