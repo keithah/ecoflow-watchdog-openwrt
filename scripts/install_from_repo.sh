@@ -25,17 +25,11 @@ need() { command -v "$1" >/dev/null 2>&1 || { echo "Missing dependency: $1" >&2;
 need curl
 
 inst() {
-  # inst <mode> <src> <dest>
+  # inst <mode> <src> <dest> using only mkdir/cp/chmod (no install dependency)
   local mode="$1" src="$2" dest="$3"
   mkdir -p "$(dirname "$dest")"
-  if command -v install >/dev/null 2>&1; then
-    install -m "$mode" "$src" "$dest"
-  elif command -v busybox >/dev/null 2>&1; then
-    busybox install -m "$mode" "$src" "$dest"
-  else
-    cp -f "$src" "$dest"
-    chmod "$mode" "$dest"
-  fi
+  cp -f "$src" "$dest"
+  chmod "$mode" "$dest"
 }
 
 fetch() {
