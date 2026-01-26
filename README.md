@@ -89,6 +89,25 @@ EOF
 - GL.iNet tile: `/etc/gl-app/ecoflow-watchdog.json` points to the LuCI path; harmless on other builds.
 - To build with an OpenWrt SDK: place this repo under the SDK tree and run `make package/ecoflow-watchdog/compile package/luci-app-ecoflow-watchdog/compile V=sc`.
 
+## Download prebuilt IPKs (ath79/mips_24kc)
+- GitHub Actions builds on every PR/push/release (workflow `build.yml`). The artifact is named `openwrt-packages-<sha>` and contains:
+  - `ecoflow-watchdog_0.1.0-1_mips_24kc.ipk`
+  - `luci-app-ecoflow-watchdog_*_all.ipk`
+- To fetch from a successful run: Actions → Build OpenWrt packages → run → Artifacts.
+- On releases, the same IPKs are attached automatically.
+
+## Installing IPKs (GL.iNet/OpenWrt)
+```
+# copy the two ipks to the router, e.g. via scp to /tmp/
+opkg update
+opkg install /tmp/ecoflow-watchdog_0.1.0-1_mips_24kc.ipk /tmp/luci-app-ecoflow-watchdog_*_all.ipk
+
+# enable daemon mode (optional; cron is still fine)
+service ecoflow_watchdog enable
+service ecoflow_watchdog start
+```
+Then open LuCI → Services → EcoFlow Watchdog (or GL.iNet “Applications” tile) to configure tokens/device/client and view status.
+
 ## Decision logic
 1) If the client is present (hostapd → DHCP leases → iwinfo), liveness resets.
 2) If input watts exceed `input_watts_threshold`, liveness resets.
