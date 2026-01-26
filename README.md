@@ -111,6 +111,12 @@ REPO=keithah/ecoflow-watchdog-openwrt REF=main MODE=cron CRON_SPEC="*/10 * * * *
 - MODE=daemon (default) enables and starts the procd service.
 - MODE=cron adds a cron entry (default */10) and restarts cron.
 - Keeps settings across upgrades by appending paths to `/etc/sysupgrade.conf` (disable with `NO_SYSUPGRADE=1`).
+- After install, the script prints a status snapshot (set `CHECK_STATUS=0` to skip).
+
+One-liner to install from current main, start daemon, and show status:
+```
+sh -c 'curl -L https://raw.githubusercontent.com/keithah/ecoflow-watchdog-openwrt/main/scripts/install_from_repo.sh | sh'
+```
 
 ## Installing IPKs (GL.iNet/OpenWrt)
 ```
