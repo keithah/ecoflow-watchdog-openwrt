@@ -22,6 +22,6 @@ We’re building an OpenWrt/GL.iNet watchdog that runs on Spitz (CAT4/5) to shut
 ### Context
 - Router: GL.iNet Spitz (GL-X750) running firmware 4.x (OpenWrt base).
 - Use case: cron/daemon script; dependencies: `curl`, `jq`, optional `iwinfo`.
-- Public repo: <REPO_URL>
+- Public repo: https://github.com/keithah/ecoflow-watchdog-openwrt
 
 Thanks for any guidance or documentation pointers!
