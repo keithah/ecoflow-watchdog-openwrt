@@ -1,0 +1,18 @@
+#!/bin/ash /etc/rc.common
+
+START=99
+USE_PROCD=1
+
+SERVICE_DAEMONIZE=1
+SERVICE_WRITE_PID=1
+
+start_service() {
+	procd_open_instance
+	procd_set_param command /usr/sbin/ecoflow_watchdogd --daemon
+	procd_set_param respawn 3600 5 5
+	procd_close_instance
+}
+
+stop_service() {
+	true
+}

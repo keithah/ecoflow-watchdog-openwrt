@@ -1,0 +1,31 @@
+config ecoflow_watchdog 'main'
+	option region 'us'
+	option api_mode 'bearer_secret'   # 'bearer_secret' or 'official'
+	option base_url 'https://api.ecoflow.com'
+	option access_token ''
+	option secret_token ''
+	option device_sn ''               # required
+
+	# Wi-Fi presence detection
+	option wifi_iface ''               # leave blank to auto-scan hostapd.* objects
+	option client_mac ''               # optional
+	option client_name 'pHADM'         # optional hostname match (case-insensitive)
+
+	# Trigger behavior
+	option grace_seconds '300'         # minimum seconds to wait after last seen before action
+	option cooldown_seconds '600'      # avoid repeated actions
+	option dry_run '0'
+
+	# Input power gate
+	option input_watts_threshold '0'
+	option check_interval '10'         # used only in daemon mode; cron runs once
+
+	# Notifications (optional)
+	option notify_cmd ''               # e.g. /usr/lib/ecoflow_watchdog/notify_sms.sh
+
+	# Logging
+	option log_tag 'ecoflow_watchdog'
+	option log_level 'info'            # info|debug
+
+	# Action target
+	option shutdown_target 'dc'        # 'dc' (disable DC/cig port) or 'device' (power off)

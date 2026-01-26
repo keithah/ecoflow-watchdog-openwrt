@@ -1,0 +1,285 @@
+#!/bin/ash
+# Simple EcoFlow watchdog (cron-friendly one-shot). Default: disable DC output when
+# pHADM Wi‑Fi client absent AND/OR no input power for grace_seconds.
+
+set -eu
+
+BASE_DIR="$(dirname "$0")"
+[ -f /usr/lib/ecoflow_watchdog/ecoflow_api.sh ] && . /usr/lib/ecoflow_watchdog/ecoflow_api.sh
+
+STATE_FILE="/tmp/ecoflow_watchdog.state"
+
+# ---------- logging ----------
+LOG_TAG="ecoflow_watchdog"
+LOG_LEVEL="info"
+
+log_level_num() {
+	case "$1" in
+		debug) echo 0 ;;
+		info) echo 1 ;;
+		warn) echo 2 ;;
+		error) echo 3 ;;
+		*) echo 1 ;;
+	esac
+}
+
+log() {
+	local level="$1"; shift
+	local level_num want_num
+	level_num=$(log_level_num "$level")
+	want_num=$(log_level_num "$LOG_LEVEL")
+	[ "$level_num" -lt "$want_num" ] && return 0
+	logger -t "$LOG_TAG" "[$level] $*"
+	# also echo to stdout when run manually
+	printf '%s\n' "[$level] $*"
+}
+
+# ---------- config helpers ----------
+cfg_get() {
+	uci -q get "ecoflow_watchdog.main.$1" 2>/dev/null
+}
+
+load_config() {
+	# optional env file override (keeps secrets out of UCI backups)
+	if [ -f /etc/ecoflow_watchdog.env ]; then
+		. /etc/ecoflow_watchdog.env
+	fi
+
+	REGION="$(cfg_get region || echo us)"
+	API_MODE="${API_MODE:-$(cfg_get api_mode || echo bearer_secret)}"
+	BASE_URL="${BASE_URL:-$(cfg_get base_url || echo https://api.ecoflow.com)}"
+	ACCESS_TOKEN="${ACCESS_TOKEN:-$(cfg_get access_token || echo '')}"
+	SECRET_TOKEN="${SECRET_TOKEN:-$(cfg_get secret_token || echo '')}"
+	DEVICE_SN="${DEVICE_SN:-$(cfg_get device_sn || echo '')}"
+	WIFI_IFACE="$(cfg_get wifi_iface || echo '')"
+	CLIENT_MAC="$(cfg_get client_mac || echo '')"
+	CLIENT_NAME="$(cfg_get client_name || echo '')"
+	GRACE_SECONDS="$(cfg_get grace_seconds || echo 300)"
+	COOLDOWN_SECONDS="$(cfg_get cooldown_seconds || echo 600)"
+	DRY_RUN="$(cfg_get dry_run || echo 0)"
+	INPUT_THRESHOLD="$(cfg_get input_watts_threshold || echo 0)"
+	CHECK_INTERVAL="$(cfg_get check_interval || echo 10)"
+	LOG_TAG="$(cfg_get log_tag || echo ecoflow_watchdog)"
+	LOG_LEVEL="$(cfg_get log_level || echo info)"
+	SHUTDOWN_TARGET="$(cfg_get shutdown_target || echo dc)"
+	NOTIFY_CMD="$(cfg_get notify_cmd || echo '')"
+
+	# normalise
+	CLIENT_MAC="$(echo "$CLIENT_MAC" | tr 'a-f' 'A-F')"
+	CLIENT_NAME="$(echo "$CLIENT_NAME" | tr 'A-Z' 'a-z')"
+}
+
+# ---------- state file ----------
+last_alive_ts=0
+last_action_ts=0
+
+load_state() {
+	[ -f "$STATE_FILE" ] && . "$STATE_FILE"
+}
+
+save_state() {
+	cat >"$STATE_FILE" <<-EOF
+last_alive_ts=$last_alive_ts
+last_action_ts=$last_action_ts
+EOF
+}
+
+# ---------- Wi‑Fi presence detection ----------
+wifi_client_present() {
+	local mac name
+	mac="$(echo "$CLIENT_MAC" | tr 'A-Z' 'a-z')"
+	name="$(echo "$CLIENT_NAME" | tr 'A-Z' 'a-z')"
+
+	local objs
+	objs="$(ubus list hostapd.* 2>/dev/null || true)"
+	for obj in $objs; do
+		# If wifi_iface is set, skip other radios
+		if [ -n "$WIFI_IFACE" ] && [ "$obj" != "hostapd.$WIFI_IFACE" ]; then
+			continue
+		fi
+		local json
+		json="$(ubus call "$obj" get_clients 2>/dev/null || true)"
+		[ -z "$json" ] && continue
+		if [ -n "$mac" ]; then
+			echo "$json" | jq -e --arg mac "$mac" '(.clients//{} | keys[]? | ascii_downcase)==$mac' >/dev/null 2>&1 && return 0
+		fi
+		if [ -n "$name" ]; then
+			echo "$json" | jq -e --arg name "$name" '(.clients//{}[]?.hostname? // "") | ascii_downcase | contains($name)' >/dev/null 2>&1 && return 0
+		fi
+	done
+
+	# DHCP leases fallback (hostname or MAC)
+	if [ -f /tmp/dhcp.leases ]; then
+		if [ -n "$name" ] && awk -v n="$name" 'BEGIN{e=1} {if (tolower($4)==n) e=0} END{exit e}' /tmp/dhcp.leases; then
+			return 0
+		fi
+		if [ -n "$mac" ] && awk -v m="$mac" 'BEGIN{e=1} {if (tolower($2)==m) e=0} END{exit e}' /tmp/dhcp.leases; then
+			return 0
+		fi
+	fi
+
+	# iwinfo fallback (MAC only)
+	if [ -n "$mac" ] && [ -n "$WIFI_IFACE" ] && command -v iwinfo >/dev/null 2>&1; then
+		iwinfo "$WIFI_IFACE" assoclist 2>/dev/null | grep -qi "$mac" && return 0
+	fi
+	return 1
+}
+
+# ---------- EcoFlow telemetry ----------
+get_input_watts() {
+	local resp watts
+	resp="$(ecoflow_get_parameters "$DEVICE_SN" 2>/dev/null || true)"
+	[ -z "$resp" ] && return 1
+	watts="$(echo "$resp" | jq -r '[
+		.data.inputWatts,
+		.data.input_watts,
+		.data.input_watts_sum,
+		.data.total_input_watts,
+		.data.chargeWatts,
+		.data.pvInputWatts,
+		.data.powerIn,
+		.data.inPower
+	] | map(select(type==\"number\")) | first // empty')"
+	[ -z "$watts" ] && return 1
+	printf '%s\n' "$watts"
+}
+
+# ---------- actions ----------
+perform_shutdown() {
+	local reason="$1"
+	local status="success"
+	if [ "$DRY_RUN" = "1" ]; then
+		log info "DRY RUN: would shutdown ($reason)"
+		last_action_ts="$NOW"
+		notify "dry_run" "$reason" ""
+		return 0
+	fi
+
+	if [ "$SHUTDOWN_TARGET" = "device" ]; then
+		if ecoflow_set_standby "$DEVICE_SN" "device" 0 >/dev/null 2>&1; then
+			log info "Requested device standby/off due to $reason"
+			last_action_ts="$NOW"
+			notify "shutdown_device" "$reason" ""
+			return 0
+		else
+			log warn "Device standby/off failed, falling back to DC off"
+			status="fallback"
+		fi
+	fi
+
+	if ecoflow_set_dc_output "$DEVICE_SN" "off" >/dev/null 2>&1; then
+		log info "Disabled DC output (cigarette) due to $reason"
+		last_action_ts="$NOW"
+		notify "shutdown_dc" "$reason" ""
+		return 0
+	fi
+
+	if ecoflow_set_car_output "$DEVICE_SN" "off" >/dev/null 2>&1; then
+		log info "Disabled car output due to $reason"
+		last_action_ts="$NOW"
+		notify "shutdown_car" "$reason" ""
+		return 0
+	fi
+
+	log error "Failed to execute shutdown action ($reason)"
+	notify "failure" "$reason" "$status"
+	return 1
+}
+
+# ---------- notifications ----------
+notify() {
+	# $1 event, $2 reason, $3 extra
+	[ -z "$NOTIFY_CMD" ] && return 0
+	local event="$1" reason="$2" extra="$3"
+	(
+		NOW_ISO="$(date -Iseconds 2>/dev/null || date)"
+		export EVENT="$event" REASON="$reason" EXTRA="$extra" TIMESTAMP="$NOW_ISO"
+		"$NOTIFY_CMD" "$event" "$reason" "$extra"
+	) >/dev/null 2>&1 || true
+}
+
+# ---------- main logic ----------
+	run_once() {
+		load_config
+		[ -z "$DEVICE_SN" ] && { log error "device_sn missing"; exit 1; }
+		API_AVAILABLE=1
+		if [ -z "$ACCESS_TOKEN" ] || [ -z "$SECRET_TOKEN" ]; then
+			API_AVAILABLE=0
+			log warn "access_token/secret_token missing; API calls disabled"
+		fi
+		NOW="$(date +%s)"
+		load_state
+		[ "$last_alive_ts" -eq 0 ] && last_alive_ts="$NOW"
+
+		local present=0
+		if wifi_client_present; then
+			present=1
+			log debug "Wi-Fi client present"
+		else
+			log info "Wi-Fi client absent"
+		fi
+
+	local watts="unknown"
+		if [ "$API_AVAILABLE" -eq 1 ]; then
+			if watts_val=$(get_input_watts); then
+				watts="$watts_val"
+				log debug "Input watts=${watts}"
+			else
+				log warn "Could not read input watts"
+			fi
+		fi
+
+	# Update liveness when either condition indicates activity
+	if [ "$present" -eq 1 ]; then
+		last_alive_ts="$NOW"
+	elif [ "$watts" != "unknown" ] && [ "$watts" -gt "$INPUT_THRESHOLD" ]; then
+		last_alive_ts="$NOW"
+	fi
+
+	local since_inactive=$((NOW - last_alive_ts))
+	local since_action=$((NOW - last_action_ts))
+
+	if [ "$since_inactive" -lt "$GRACE_SECONDS" ]; then
+		log debug "Within grace window (${since_inactive}s < ${GRACE_SECONDS}s); no action"
+		save_state
+		return 0
+	fi
+
+	if [ "$since_action" -lt "$COOLDOWN_SECONDS" ]; then
+		log debug "Within cooldown (${since_action}s < ${COOLDOWN_SECONDS}s); no action"
+		save_state
+		return 0
+	fi
+
+	local reason
+	if [ "$present" -eq 0 ]; then
+		reason="wifi_absent_${since_inactive}s"
+	else
+		reason="no_input_${watts}w_${since_inactive}s"
+	fi
+		if [ "$API_AVAILABLE" -eq 0 ]; then
+			log error "Cannot act ($reason): API credentials missing"
+			notify "failure" "$reason" "no_api_creds"
+			save_state
+			return 1
+		fi
+		perform_shutdown "$reason"
+		save_state
+	}
+
+run_daemon() {
+	while true; do
+		run_once
+		sleep "$CHECK_INTERVAL"
+	done
+}
+
+main() {
+	if [ "${1:-}" = "--daemon" ]; then
+		run_daemon
+	else
+		run_once
+	fi
+}
+
+main "$@"

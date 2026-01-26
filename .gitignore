@@ -1,0 +1,9 @@
+# ignore build/output/state artifacts
+*.swp
+*.swo
+*.tmp
+*.bak
+/tmp/
+/dist/
+/build/
+/ecoflow_watchdog.state
