@@ -9,6 +9,8 @@ PKG_MAINTAINER:=Keith <keith@example.com>
 
 include $(INCLUDE_DIR)/package.mk
 
+FEEDSRC:=$(TOPDIR)/feeds/ecoflow
+
 define Package/ecoflow-watchdog
   SECTION:=utils
   CATEGORY:=Utilities
@@ -25,24 +27,24 @@ endef
 
 define Package/ecoflow-watchdog/install
 	$(INSTALL_DIR) $(1)/usr/sbin
-	$(INSTALL_BIN) ./usr/sbin/ecoflow_watchdogd $(1)/usr/sbin/
+	$(INSTALL_BIN) $(FEEDSRC)/usr/sbin/ecoflow_watchdogd $(1)/usr/sbin/
 
 	$(INSTALL_DIR) $(1)/usr/lib/ecoflow_watchdog
-	$(INSTALL_BIN) ./usr/lib/ecoflow_watchdog/ecoflow_api.sh $(1)/usr/lib/ecoflow_watchdog/
-	$(INSTALL_BIN) ./usr/lib/ecoflow_watchdog/notify_sample.sh $(1)/usr/lib/ecoflow_watchdog/
+	$(INSTALL_BIN) $(FEEDSRC)/usr/lib/ecoflow_watchdog/ecoflow_api.sh $(1)/usr/lib/ecoflow_watchdog/
+	$(INSTALL_BIN) $(FEEDSRC)/usr/lib/ecoflow_watchdog/notify_sample.sh $(1)/usr/lib/ecoflow_watchdog/
 
 	$(INSTALL_DIR) $(1)/etc/config
-	$(INSTALL_CONF) ./etc/config/ecoflow_watchdog $(1)/etc/config/
+	$(INSTALL_CONF) $(FEEDSRC)/etc/config/ecoflow_watchdog $(1)/etc/config/
 
 	$(INSTALL_DIR) $(1)/etc/init.d
-	$(INSTALL_BIN) ./etc/init.d/ecoflow_watchdog $(1)/etc/init.d/
+	$(INSTALL_BIN) $(FEEDSRC)/etc/init.d/ecoflow_watchdog $(1)/etc/init.d/
 
 	$(INSTALL_DIR) $(1)/etc
-	$(INSTALL_CONF) ./ecoflow_watchdog.env.example $(1)/etc/ecoflow_watchdog.env.example
+	$(INSTALL_CONF) $(FEEDSRC)/ecoflow_watchdog.env.example $(1)/etc/ecoflow_watchdog.env.example
 
 	# GL.iNet app tile (harmless elsewhere)
 	$(INSTALL_DIR) $(1)/etc/gl-app
-	$(INSTALL_CONF) ./package/ecoflow-watchdog/files/etc/gl-app/ecoflow-watchdog.json $(1)/etc/gl-app/
+	$(INSTALL_CONF) $(FEEDSRC)/package/ecoflow-watchdog/files/etc/gl-app/ecoflow-watchdog.json $(1)/etc/gl-app/
 endef
 
 $(eval $(call BuildPackage,ecoflow-watchdog))
