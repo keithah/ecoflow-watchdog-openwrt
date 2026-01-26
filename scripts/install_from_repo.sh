@@ -24,6 +24,20 @@ trap cleanup EXIT
 need() { command -v "$1" >/dev/null 2>&1 || { echo "Missing dependency: $1" >&2; exit 1; }; }
 need curl
 
+inst() {
+  # inst <mode> <src> <dest>
+  local mode="$1" src="$2" dest="$3"
+  mkdir -p "$(dirname "$dest")"
+  if command -v install >/dev/null 2>&1; then
+    install -m "$mode" "$src" "$dest"
+  elif command -v busybox >/dev/null 2>&1; then
+    busybox install -m "$mode" "$src" "$dest"
+  else
+    cp -f "$src" "$dest"
+    chmod "$mode" "$dest"
+  fi
+}
+
 fetch() {
   local path="$1" dest="$2"
   mkdir -p "$(dirname "$dest")"
@@ -40,23 +54,18 @@ fetch ecoflow_watchdog.env.example "$TMP/ecoflow_watchdog.env.example"
 fetch package/ecoflow-watchdog/files/etc/gl-app/ecoflow-watchdog.json "$TMP/glapp.json"
 
 # Install
-install -m 755 "$TMP/ecoflow_watchdogd" "$ROOT/usr/sbin/ecoflow_watchdogd"
-mkdir -p "$ROOT/usr/lib/ecoflow_watchdog"
-install -m 755 "$TMP/ecoflow_api.sh" "$ROOT/usr/lib/ecoflow_watchdog/ecoflow_api.sh"
-install -m 755 "$TMP/notify_sample.sh" "$ROOT/usr/lib/ecoflow_watchdog/notify_sample.sh"
+inst 755 "$TMP/ecoflow_watchdogd" "$ROOT/usr/sbin/ecoflow_watchdogd"
+inst 755 "$TMP/ecoflow_api.sh" "$ROOT/usr/lib/ecoflow_watchdog/ecoflow_api.sh"
+inst 755 "$TMP/notify_sample.sh" "$ROOT/usr/lib/ecoflow_watchdog/notify_sample.sh"
 
-mkdir -p "$ROOT/etc/config"
-install -m 600 "$TMP/ecoflow_watchdog.conf" "$ROOT/etc/config/ecoflow_watchdog"
+inst 600 "$TMP/ecoflow_watchdog.conf" "$ROOT/etc/config/ecoflow_watchdog"
 
-mkdir -p "$ROOT/etc"
-install -m 600 "$TMP/ecoflow_watchdog.env.example" "$ROOT/etc/ecoflow_watchdog.env"
+inst 600 "$TMP/ecoflow_watchdog.env.example" "$ROOT/etc/ecoflow_watchdog.env"
 
-mkdir -p "$ROOT/etc/init.d"
-install -m 755 "$TMP/init_ecoflow_watchdog" "$ROOT/etc/init.d/ecoflow_watchdog"
+inst 755 "$TMP/init_ecoflow_watchdog" "$ROOT/etc/init.d/ecoflow_watchdog"
 
 # GL.iNet tile (harmless elsewhere)
-mkdir -p "$ROOT/etc/gl-app"
-install -m 644 "$TMP/glapp.json" "$ROOT/etc/gl-app/ecoflow-watchdog.json"
+inst 644 "$TMP/glapp.json" "$ROOT/etc/gl-app/ecoflow-watchdog.json"
 
 # sysupgrade persistence
 if [ "$NO_SYSUPGRADE" != "1" ]; then
